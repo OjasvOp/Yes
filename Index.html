@@ -20,6 +20,7 @@
 
     <div id="chat-container" class="container mx-auto mt-10 p-4 hidden">
         <h1 class="text-3xl font-bold mb-4">NalloKeMemes Chat</h1>
+        <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs</button>
         <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4 h-96"></div>
         <div class="flex space-x-2">
             <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
@@ -70,6 +71,7 @@
         const backToChatBtn = document.getElementById('back-to-chat-btn');
         const dmHeader = document.getElementById('dm-header');
         const passwordCriteria = document.getElementById('password-criteria');
+        const openDmsBtn = document.getElementById('open-dms-btn');
 
         let currentUser = null;
         let currentDmUser = null;
@@ -158,13 +160,30 @@
                 div.appendChild(replyDiv);
             }
 
+            const bottomDiv = document.createElement('div');
+            bottomDiv.className = 'flex justify-between items-center mt-1';
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'text-xs text-gray-500';
+            timeSpan.textContent = formatTimestamp(message.timestamp);
+
             const replyBtn = document.createElement('button');
             replyBtn.textContent = 'Reply';
-            replyBtn.className = 'bg-gray-200 text-sm p-1 rounded mt-1 ml-2';
+            replyBtn.className = 'bg-gray-200 text-xs p-1 rounded';
             replyBtn.addEventListener('click', () => showReplyOption(messageId, message));
-            div.appendChild(replyBtn);
+
+            bottomDiv.appendChild(timeSpan);
+            bottomDiv.appendChild(replyBtn);
+            div.appendChild(bottomDiv);
 
             return div;
+        }
+
+        // Format timestamp
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '';
+            const date = timestamp.toDate();
+            return date.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
         }
 
         // Show reply option
@@ -208,11 +227,35 @@
                 dmMessagesDiv.innerHTML = '';
                 snapshot.forEach((doc) => {
                     const message = doc.data();
-                    const messageElement = createMessageElement(message, doc.id);
+                    const messageElement = createDmMessageElement(message);
                     dmMessagesDiv.appendChild(messageElement);
                 });
                 dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
             });
+        }
+
+        // Create DM message element
+        function createDmMessageElement(message) {
+            const div = document.createElement('div');
+            div.className = 'mb-2 p-2 rounded';
+            div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+
+            const senderSpan = document.createElement('span');
+            senderSpan.className = 'font-bold';
+            senderSpan.textContent = message.sender + ': ';
+
+            const contentSpan = document.createElement('span');
+            contentSpan.textContent = message.content;
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'text-xs text-gray-500 block mt-1';
+            timeSpan.textContent = formatTimestamp(message.timestamp);
+
+            div.appendChild(senderSpan);
+            div.appendChild(contentSpan);
+            div.appendChild(timeSpan);
+
+            return div;
         }
 
         // Send direct message
@@ -234,6 +277,41 @@
                         console.error('Error sending direct message:', error);
                     });
             }
+        }
+
+        // Open DMs window
+        function openDmsWindow() {
+            dmContainer.classList.remove('hidden');
+            chatContainer.classList.add('hidden');
+            dmHeader.textContent = 'Your Direct Messages';
+            loadUserDms();
+        }
+
+        // Load user's DMs
+        function loadUserDms() {
+            const currentUsername = currentUser.email.split('@')[0];
+            db.collection('directMessages').where('participants', 'array-contains', currentUsername).get()
+                .then((querySnapshot) => {
+                    dmMessagesDiv.innerHTML = '';
+                    querySnapshot.forEach((doc) => {
+                        const chatData = doc.data();
+                        const otherUser = chatData.participants.find(user => user !== currentUsername);
+                        const dmButton = createDmButton(otherUser);
+                        dmMessagesDiv.appendChild(dmButton);
+                    });
+                })
+                .catch((error) => {
+                    console.error('Error loading DMs:', error);
+                });
+        }
+
+        // Create DM button
+        function createDmButton(otherUser) {
+            const button = document.createElement('button');
+            button.className = 'bg-blue-500 text-white p-2 rounded mb-2 w-full text-left';
+            button.textContent = `Chat with ${otherUser}`;
+            button.addEventListener('click', () => openDmWindow(otherUser));
+            return button;
         }
 
         // Event listeners
@@ -265,6 +343,8 @@
             currentDmUser = null;
         });
 
+        openDmsBtn.addEventListener('click', openDmsWindow);
+
         // Function to open DM window
         function openDmWindow(otherUser) {
             currentDmUser = otherUser;
@@ -272,7 +352,69 @@
             dmContainer.classList.remove('hidden');
             dmHeader.textContent = `Direct Message with ${otherUser}`;
             loadDirectMessages(otherUser);
+
+            // Ensure the chat exists in Firestore
+            const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
+            db.collection('directMessages').doc(chatId).set({
+                participants: [currentUser.email.split('@')[0], otherUser]
+            }, { merge: true });
         }
+
+        // Load direct messages for a specific user
+        function loadDirectMessages(otherUser) {
+            const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
+            db.collection('directMessages').doc(chatId).collection('messages')
+                .orderBy('timestamp')
+                .onSnapshot((snapshot) => {
+                    dmMessagesDiv.innerHTML = '';
+                    snapshot.forEach((doc) => {
+                        const message = doc.data();
+                        const messageElement = createDmMessageElement(message);
+                        dmMessagesDiv.appendChild(messageElement);
+                    });
+                    dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
+                });
+        }
+
+        // Function to handle user logout
+        function logout() {
+            auth.signOut().then(() => {
+                localStorage.removeItem('username');
+                localStorage.removeItem('password');
+                currentUser = null;
+                loginContainer.classList.remove('hidden');
+                chatContainer.classList.add('hidden');
+                dmContainer.classList.add('hidden');
+            }).catch((error) => {
+                console.error('Error signing out:', error);
+            });
+        }
+
+        // Add logout button
+        const logoutBtn = document.createElement('button');
+        logoutBtn.textContent = 'Logout';
+        logoutBtn.className = 'bg-red-500 text-white p-2 rounded absolute top-4 right-4';
+        logoutBtn.addEventListener('click', logout);
+        document.body.appendChild(logoutBtn);
+
+        // Initialize the chat application
+        function initChat() {
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    currentUser = user;
+                    loginContainer.classList.add('hidden');
+                    chatContainer.classList.remove('hidden');
+                    loadMessages();
+                } else {
+                    loginContainer.classList.remove('hidden');
+                    chatContainer.classList.add('hidden');
+                    dmContainer.classList.add('hidden');
+                }
+            });
+        }
+
+        // Call initChat to start the application
+        initChat();
     </script>
 </body>
 </html>
