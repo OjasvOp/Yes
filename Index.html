@@ -17,15 +17,32 @@
         .full-page {
             height: 100vh;
             width: 100vw;
-            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
         .chat-container {
-            height: calc(100vh - 200px);
+            flex-grow: 1;
+            overflow-y: auto;
         }
         .reply-preview {
             font-size: 0.8em;
             color: #888;
             margin-bottom: 5px;
+        }
+        .message-input-container {
+            position: sticky;
+            bottom: 0;
+            background-color: white;
+            padding: 10px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .unread-messages-marker {
+            background-color: #fef3c7;
+            color: #92400e;
+            text-align: center;
+            padding: 5px;
+            margin: 10px 0;
+            border-radius: 5px;
         }
     </style>
 </head>
@@ -41,21 +58,25 @@
     <div id="chat-container" class="full-page container mx-auto p-4 hidden">
         <h1 class="text-3xl font-bold mb-4">NalloKeMemes Chat</h1>
         <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs <span id="dm-notification" class="bg-red-500 text-white rounded-full px-2 py-1 text-xs hidden">1</span></button>
-        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md mb-4"></div>
         <div id="reply-preview" class="reply-preview hidden"></div>
-        <div class="flex space-x-2">
-            <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
-            <button id="send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
+        <div class="message-input-container">
+            <div class="flex space-x-2">
+                <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
+                <button id="send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
+            </div>
         </div>
     </div>
 
     <div id="dm-container" class="full-page container mx-auto p-4 hidden">
         <h2 id="dm-header" class="text-2xl font-bold mb-4"></h2>
-        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md mb-4"></div>
         <div id="dm-reply-preview" class="reply-preview hidden"></div>
-        <div class="flex space-x-2">
-            <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
-            <button id="dm-send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
+        <div class="message-input-container">
+            <div class="flex space-x-2">
+                <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
+                <button id="dm-send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
+            </div>
         </div>
         <button id="back-to-chat-btn" class="mt-4 bg-gray-300 text-black p-2 rounded">Back to Main Chat</button>
     </div>
@@ -102,6 +123,7 @@
         let currentDmUser = null;
         let replyingTo = null;
         let dmReplyingTo = null;
+        let lastSeenMessageTimestamp = null;
 
         // Check if user is already logged in
         const savedUsername = localStorage.getItem('username');
@@ -126,6 +148,7 @@
                     loginContainer.classList.add('hidden');
                     chatContainer.classList.remove('hidden');
                     loadMessages();
+                    checkNewDms();
                 })
                 .catch((error) => {
                     // If user doesn't exist, create a new account
@@ -137,6 +160,7 @@
                             loginContainer.classList.add('hidden');
                             chatContainer.classList.remove('hidden');
                             loadMessages();
+                            checkNewDms();
                         })
                         .catch((error) => {
                             console.error('Error creating user:', error);
@@ -149,12 +173,21 @@
         function loadMessages() {
             db.collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
                 messagesDiv.innerHTML = '';
+                let unreadMarkerAdded = false;
                 snapshot.forEach((doc) => {
                     const message = doc.data();
+                    if (!unreadMarkerAdded && lastSeenMessageTimestamp && message.timestamp && message.timestamp.toMillis() > lastSeenMessageTimestamp) {
+                        const unreadMarker = document.createElement('div');
+                        unreadMarker.className = 'unread-messages-marker';
+                        unreadMarker.textContent = 'Unread Messages';
+                        messagesDiv.appendChild(unreadMarker);
+                        unreadMarkerAdded = true;
+                    }
                     const messageElement = createMessageElement(message, doc.id);
                     messagesDiv.appendChild(messageElement);
                 });
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                lastSeenMessageTimestamp = Date.now();
             });
         }
 
@@ -288,7 +321,7 @@
             });
         }
 
-        // Create DM message element
+        // Create DM message element (continued)
         function createDmMessageElement(message, messageId) {
             const div = document.createElement('div');
             div.className = 'mb-2 p-2 rounded';
@@ -428,37 +461,6 @@
             return button;
         }
 
-        // Event listeners
-        loginBtn.addEventListener('click', () => {
-            const username = usernameInput.value.trim();
-            const password = passwordInput.value.trim();
-            if (username && password) {
-                login(username, password);
-            }
-        });
-
-        sendBtn.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-
-        dmSendBtn.addEventListener('click', sendDirectMessage);
-        dmInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendDirectMessage();
-            }
-        });
-
-        backToChatBtn.addEventListener('click', () => {
-            dmContainer.classList.add('hidden');
-            chatContainer.classList.remove('hidden');
-            currentDmUser = null;
-        });
-
-        openDmsBtn.addEventListener('click', openDmsWindow);
-
         // Function to open DM window
         function openDmWindow(otherUser) {
             currentDmUser = otherUser;
@@ -491,13 +493,6 @@
             });
         }
 
-        // Add logout button
-        const logoutBtn = document.createElement('button');
-        logoutBtn.textContent = 'Logout';
-        logoutBtn.className = 'bg-red-500 text-white p-2 rounded absolute top-4 right-4';
-        logoutBtn.addEventListener('click', logout);
-        document.body.appendChild(logoutBtn);
-
         // Function to check for new DMs
         function checkNewDms() {
             const currentUsername = currentUser.email.split('@')[0];
@@ -506,15 +501,53 @@
                 .onSnapshot((snapshot) => {
                     let hasNewMessages = false;
                     snapshot.docChanges().forEach((change) => {
-                        if (change.type === 'modified') {
+                        if (change.type === 'modified' || change.type === 'added') {
                             hasNewMessages = true;
                         }
                     });
-                    if (hasNewMessages && !dmContainer.classList.contains('hidden')) {
+                    if (hasNewMessages) {
                         dmNotification.classList.remove('hidden');
                     }
                 });
         }
+
+        // Event listeners
+        loginBtn.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+            if (username && password) {
+                login(username, password);
+            }
+        });
+
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        dmSendBtn.addEventListener('click', sendDirectMessage);
+        dmInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendDirectMessage();
+            }
+        });
+
+        backToChatBtn.addEventListener('click', () => {
+            dmContainer.classList.add('hidden');
+            chatContainer.classList.remove('hidden');
+            currentDmUser = null;
+        });
+
+        openDmsBtn.addEventListener('click', openDmsWindow);
+
+        // Add logout button
+        const logoutBtn = document.createElement('button');
+        logoutBtn.textContent = 'Logout';
+        logoutBtn.className = 'bg-red-500 text-white p-2 rounded absolute top-4 right-4';
+        logoutBtn.addEventListener('click', logout);
+        document.body.appendChild(logoutBtn);
 
         // Initialize the chat application
         function initChat() {
