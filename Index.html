@@ -8,9 +8,29 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        .full-page {
+            height: 100vh;
+            width: 100vw;
+            overflow-y: auto;
+        }
+        .chat-container {
+            height: calc(100vh - 200px);
+        }
+        .reply-preview {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
-    <div id="login-container" class="container mx-auto mt-10 p-4">
+    <div id="login-container" class="full-page container mx-auto p-4">
         <h1 class="text-3xl font-bold mb-4">Welcome to NalloKeMemes Chat</h1>
         <input type="text" id="username" placeholder="Username" class="border p-2 mb-2 w-full">
         <input type="password" id="password" placeholder="Password" class="border p-2 mb-2 w-full">
@@ -18,19 +38,21 @@
         <button id="login-btn" class="bg-blue-500 text-white p-2 rounded">Enter Chat</button>
     </div>
 
-    <div id="chat-container" class="container mx-auto mt-10 p-4 hidden">
+    <div id="chat-container" class="full-page container mx-auto p-4 hidden">
         <h1 class="text-3xl font-bold mb-4">NalloKeMemes Chat</h1>
-        <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs</button>
-        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4 h-96"></div>
+        <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs <span id="dm-notification" class="bg-red-500 text-white rounded-full px-2 py-1 text-xs hidden">1</span></button>
+        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div id="reply-preview" class="reply-preview hidden"></div>
         <div class="flex space-x-2">
             <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
             <button id="send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
         </div>
     </div>
 
-    <div id="dm-container" class="container mx-auto mt-10 p-4 hidden">
+    <div id="dm-container" class="full-page container mx-auto p-4 hidden">
         <h2 id="dm-header" class="text-2xl font-bold mb-4"></h2>
-        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4 h-96"></div>
+        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div id="dm-reply-preview" class="reply-preview hidden"></div>
         <div class="flex space-x-2">
             <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
             <button id="dm-send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
@@ -72,9 +94,14 @@
         const dmHeader = document.getElementById('dm-header');
         const passwordCriteria = document.getElementById('password-criteria');
         const openDmsBtn = document.getElementById('open-dms-btn');
+        const dmNotification = document.getElementById('dm-notification');
+        const replyPreview = document.getElementById('reply-preview');
+        const dmReplyPreview = document.getElementById('dm-reply-preview');
 
         let currentUser = null;
         let currentDmUser = null;
+        let replyingTo = null;
+        let dmReplyingTo = null;
 
         // Check if user is already logged in
         const savedUsername = localStorage.getItem('username');
@@ -138,6 +165,19 @@
             div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
             div.dataset.messageId = messageId;
 
+            if (message.replyTo) {
+                const replyDiv = document.createElement('div');
+                replyDiv.className = 'text-sm text-gray-600 mb-1';
+                replyDiv.textContent = `${message.replyTo.sender}: ${message.replyTo.content}`;
+                div.appendChild(replyDiv);
+            }
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'flex justify-between items-start';
+
+            const leftPart = document.createElement('div');
+            leftPart.className = 'flex-grow';
+
             const senderSpan = document.createElement('span');
             senderSpan.className = 'font-bold cursor-pointer';
             senderSpan.textContent = message.sender + ': ';
@@ -150,31 +190,36 @@
             const contentSpan = document.createElement('span');
             contentSpan.textContent = message.content;
 
-            div.appendChild(senderSpan);
-            div.appendChild(contentSpan);
+            leftPart.appendChild(senderSpan);
+            leftPart.appendChild(contentSpan);
 
-            if (message.replyTo) {
-                const replyDiv = document.createElement('div');
-                replyDiv.className = 'text-sm text-gray-600 mt-1';
-                replyDiv.textContent = `Replying to: ${message.replyTo.sender}: ${message.replyTo.content}`;
-                div.appendChild(replyDiv);
-            }
-
-            const bottomDiv = document.createElement('div');
-            bottomDiv.className = 'flex justify-between items-center mt-1';
+            const rightPart = document.createElement('div');
+            rightPart.className = 'flex items-center';
 
             const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-xs text-gray-500';
+            timeSpan.className = 'text-xs text-gray-500 mr-2';
             timeSpan.textContent = formatTimestamp(message.timestamp);
 
             const replyBtn = document.createElement('button');
             replyBtn.textContent = 'Reply';
-            replyBtn.className = 'bg-gray-200 text-xs p-1 rounded';
+            replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
             replyBtn.addEventListener('click', () => showReplyOption(messageId, message));
 
-            bottomDiv.appendChild(timeSpan);
-            bottomDiv.appendChild(replyBtn);
-            div.appendChild(bottomDiv);
+            rightPart.appendChild(timeSpan);
+            rightPart.appendChild(replyBtn);
+
+            if (message.sender === currentUser.email.split('@')[0]) {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
+                deleteBtn.addEventListener('click', () => deleteMessage(messageId));
+                rightPart.appendChild(deleteBtn);
+            }
+
+            messageContent.appendChild(leftPart);
+            messageContent.appendChild(rightPart);
+
+            div.appendChild(messageContent);
 
             return div;
         }
@@ -188,12 +233,9 @@
 
         // Show reply option
         function showReplyOption(messageId, message) {
-            messageInput.value = `Replying to ${message.sender}: `;
-            messageInput.dataset.replyTo = JSON.stringify({
-                id: messageId,
-                sender: message.sender,
-                content: message.content
-            });
+            replyingTo = { id: messageId, sender: message.sender, content: message.content };
+            replyPreview.textContent = `Replying to ${message.sender}: ${message.content}`;
+            replyPreview.classList.remove('hidden');
             messageInput.focus();
         }
 
@@ -201,23 +243,35 @@
         function sendMessage() {
             const content = messageInput.value.trim();
             if (content) {
-                const replyTo = messageInput.dataset.replyTo ? JSON.parse(messageInput.dataset.replyTo) : null;
                 const message = {
                     sender: currentUser.email.split('@')[0],
                     content: content,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    replyTo: replyTo
+                    replyTo: replyingTo
                 };
 
                 db.collection('messages').add(message)
                     .then(() => {
                         messageInput.value = '';
-                        messageInput.dataset.replyTo = '';
+                        replyingTo = null;
+                        replyPreview.textContent = '';
+                        replyPreview.classList.add('hidden');
                     })
                     .catch((error) => {
                         console.error('Error sending message:', error);
                     });
             }
+        }
+
+        // Delete message
+        function deleteMessage(messageId) {
+            db.collection('messages').doc(messageId).delete()
+                .then(() => {
+                    console.log('Message deleted successfully');
+                })
+                .catch((error) => {
+                    console.error('Error deleting message:', error);
+                });
         }
 
         // Load direct messages
@@ -227,7 +281,7 @@
                 dmMessagesDiv.innerHTML = '';
                 snapshot.forEach((doc) => {
                     const message = doc.data();
-                    const messageElement = createDmMessageElement(message);
+                    const messageElement = createDmMessageElement(message, doc.id);
                     dmMessagesDiv.appendChild(messageElement);
                 });
                 dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
@@ -235,10 +289,23 @@
         }
 
         // Create DM message element
-        function createDmMessageElement(message) {
+        function createDmMessageElement(message, messageId) {
             const div = document.createElement('div');
             div.className = 'mb-2 p-2 rounded';
             div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+
+            if (message.replyTo) {
+                const replyDiv = document.createElement('div');
+                replyDiv.className = 'text-sm text-gray-600 mb-1';
+                replyDiv.textContent = `${message.replyTo.sender}: ${message.replyTo.content}`;
+                div.appendChild(replyDiv);
+            }
+
+            const messageContent = document.createElement('div');
+            messageContent.className = 'flex justify-between items-start';
+
+            const leftPart = document.createElement('div');
+            leftPart.className = 'flex-grow';
 
             const senderSpan = document.createElement('span');
             senderSpan.className = 'font-bold';
@@ -247,15 +314,46 @@
             const contentSpan = document.createElement('span');
             contentSpan.textContent = message.content;
 
+            leftPart.appendChild(senderSpan);
+            leftPart.appendChild(contentSpan);
+
+            const rightPart = document.createElement('div');
+            rightPart.className = 'flex items-center';
+
             const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-xs text-gray-500 block mt-1';
+            timeSpan.className = 'text-xs text-gray-500 mr-2';
             timeSpan.textContent = formatTimestamp(message.timestamp);
 
-            div.appendChild(senderSpan);
-            div.appendChild(contentSpan);
-            div.appendChild(timeSpan);
+            const replyBtn = document.createElement('button');
+            replyBtn.textContent = 'Reply';
+            replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
+            replyBtn.addEventListener('click', () => showDmReplyOption(messageId, message));
+
+            rightPart.appendChild(timeSpan);
+            rightPart.appendChild(replyBtn);
+
+            if (message.sender === currentUser.email.split('@')[0]) {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
+                deleteBtn.addEventListener('click', () => deleteDmMessage(messageId));
+                rightPart.appendChild(deleteBtn);
+            }
+
+            messageContent.appendChild(leftPart);
+            messageContent.appendChild(rightPart);
+
+            div.appendChild(messageContent);
 
             return div;
+        }
+
+        // Show DM reply option
+        function showDmReplyOption(messageId, message) {
+            dmReplyingTo = { id: messageId, sender: message.sender, content: message.content };
+            dmReplyPreview.textContent = `Replying to ${message.sender}: ${message.content}`;
+            dmReplyPreview.classList.remove('hidden');
+            dmInput.focus();
         }
 
         // Send direct message
@@ -266,17 +364,33 @@
                 const message = {
                     sender: currentUser.email.split('@')[0],
                     content: content,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    replyTo: dmReplyingTo
                 };
 
                 db.collection('directMessages').doc(chatId).collection('messages').add(message)
                     .then(() => {
                         dmInput.value = '';
+                        dmReplyingTo = null;
+                        dmReplyPreview.textContent = '';
+                        dmReplyPreview.classList.add('hidden');
                     })
                     .catch((error) => {
                         console.error('Error sending direct message:', error);
                     });
             }
+        }
+
+        // Delete DM message
+        function deleteDmMessage(messageId) {
+            const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
+            db.collection('directMessages').doc(chatId).collection('messages').doc(messageId).delete()
+                .then(() => {
+                    console.log('DM message deleted successfully');
+                })
+                .catch((error) => {
+                    console.error('Error deleting DM message:', error);
+                });
         }
 
         // Open DMs window
@@ -358,22 +472,9 @@
             db.collection('directMessages').doc(chatId).set({
                 participants: [currentUser.email.split('@')[0], otherUser]
             }, { merge: true });
-        }
 
-        // Load direct messages for a specific user
-        function loadDirectMessages(otherUser) {
-            const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
-            db.collection('directMessages').doc(chatId).collection('messages')
-                .orderBy('timestamp')
-                .onSnapshot((snapshot) => {
-                    dmMessagesDiv.innerHTML = '';
-                    snapshot.forEach((doc) => {
-                        const message = doc.data();
-                        const messageElement = createDmMessageElement(message);
-                        dmMessagesDiv.appendChild(messageElement);
-                    });
-                    dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
-                });
+            // Reset DM notification
+            dmNotification.classList.add('hidden');
         }
 
         // Function to handle user logout
@@ -397,6 +498,24 @@
         logoutBtn.addEventListener('click', logout);
         document.body.appendChild(logoutBtn);
 
+        // Function to check for new DMs
+        function checkNewDms() {
+            const currentUsername = currentUser.email.split('@')[0];
+            db.collection('directMessages')
+                .where('participants', 'array-contains', currentUsername)
+                .onSnapshot((snapshot) => {
+                    let hasNewMessages = false;
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === 'modified') {
+                            hasNewMessages = true;
+                        }
+                    });
+                    if (hasNewMessages && !dmContainer.classList.contains('hidden')) {
+                        dmNotification.classList.remove('hidden');
+                    }
+                });
+        }
+
         // Initialize the chat application
         function initChat() {
             auth.onAuthStateChanged((user) => {
@@ -405,6 +524,7 @@
                     loginContainer.classList.add('hidden');
                     chatContainer.classList.remove('hidden');
                     loadMessages();
+                    checkNewDms();
                 } else {
                     loginContainer.classList.remove('hidden');
                     chatContainer.classList.add('hidden');
