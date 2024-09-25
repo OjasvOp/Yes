@@ -23,7 +23,7 @@
         .chat-container {
             flex-grow: 1;
             overflow-y: auto;
-            padding-bottom: 80px; /* Increased padding to prevent overlap */
+            padding-bottom: 100px; /* Increased padding to prevent overlap */
         }
         .reply-preview {
             font-size: 0.8em;
@@ -38,6 +38,9 @@
             background-color: white;
             padding: 10px;
             border-top: 1px solid #e5e7eb;
+        }
+        .message-input-spacer {
+            height: 80px; /* Matches the height of the input container */
         }
     </style>
 </head>
@@ -55,6 +58,7 @@
         <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs</button>
         <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md mb-4"></div>
         <div id="reply-preview" class="reply-preview hidden"></div>
+        <div class="message-input-spacer"></div>
         <div class="message-input-container">
             <div class="flex space-x-2">
                 <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
@@ -67,6 +71,7 @@
         <h2 id="dm-header" class="text-2xl font-bold mb-4"></h2>
         <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md mb-4"></div>
         <div id="dm-reply-preview" class="reply-preview hidden"></div>
+        <div class="message-input-spacer"></div>
         <div class="message-input-container">
             <div class="flex space-x-2">
                 <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
@@ -531,4 +536,3 @@
     </script>
 </body>
 </html>
-        
