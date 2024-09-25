@@ -14,7 +14,7 @@
         <h1 class="text-3xl font-bold mb-4">Welcome to NalloKeMemes Chat</h1>
         <input type="text" id="username" placeholder="Username" class="border p-2 mb-2 w-full">
         <input type="password" id="password" placeholder="Password" class="border p-2 mb-2 w-full">
-        <p class="text-sm text-gray-600 mb-2">Write any random password so that you can access your profile from different devices.</p>
+        <p id="password-criteria" class="text-sm text-gray-600 mb-2">Password must be at least 6 characters long.</p>
         <button id="login-btn" class="bg-blue-500 text-white p-2 rounded">Enter Chat</button>
     </div>
 
@@ -69,6 +69,7 @@
         const passwordInput = document.getElementById('password');
         const backToChatBtn = document.getElementById('back-to-chat-btn');
         const dmHeader = document.getElementById('dm-header');
+        const passwordCriteria = document.getElementById('password-criteria');
 
         let currentUser = null;
         let currentDmUser = null;
@@ -82,6 +83,12 @@
 
         // Login function
         function login(username, password) {
+            if (password.length < 6) {
+                passwordCriteria.textContent = "Password must be at least 6 characters long.";
+                passwordCriteria.classList.add('text-red-500');
+                return;
+            }
+
             auth.signInWithEmailAndPassword(username + '@nallokememes.com', password)
                 .then((userCredential) => {
                     currentUser = userCredential.user;
@@ -127,10 +134,16 @@
             const div = document.createElement('div');
             div.className = 'mb-2 p-2 rounded';
             div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+            div.dataset.messageId = messageId;
 
             const senderSpan = document.createElement('span');
-            senderSpan.className = 'font-bold';
+            senderSpan.className = 'font-bold cursor-pointer';
             senderSpan.textContent = message.sender + ': ';
+            senderSpan.addEventListener('click', () => {
+                if (message.sender !== currentUser.email.split('@')[0]) {
+                    openDmWindow(message.sender);
+                }
+            });
 
             const contentSpan = document.createElement('span');
             contentSpan.textContent = message.content;
@@ -145,30 +158,24 @@
                 div.appendChild(replyDiv);
             }
 
-            div.addEventListener('click', () => showReplyOption(messageId, message));
+            const replyBtn = document.createElement('button');
+            replyBtn.textContent = 'Reply';
+            replyBtn.className = 'bg-gray-200 text-sm p-1 rounded mt-1 ml-2';
+            replyBtn.addEventListener('click', () => showReplyOption(messageId, message));
+            div.appendChild(replyBtn);
 
             return div;
         }
 
         // Show reply option
         function showReplyOption(messageId, message) {
-            const replyBtn = document.createElement('button');
-            replyBtn.textContent = 'Reply';
-            replyBtn.className = 'bg-gray-200 text-sm p-1 rounded mt-1';
-            replyBtn.addEventListener('click', () => {
-                messageInput.value = `Replying to ${message.sender}: `;
-                messageInput.dataset.replyTo = JSON.stringify({
-                    id: messageId,
-                    sender: message.sender,
-                    content: message.content
-                });
-                messageInput.focus();
+            messageInput.value = `Replying to ${message.sender}: `;
+            messageInput.dataset.replyTo = JSON.stringify({
+                id: messageId,
+                sender: message.sender,
+                content: message.content
             });
-
-            const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
-            if (messageElement && !messageElement.querySelector('button')) {
-                messageElement.appendChild(replyBtn);
-            }
+            messageInput.focus();
         }
 
         // Send message
@@ -266,16 +273,6 @@
             dmHeader.textContent = `Direct Message with ${otherUser}`;
             loadDirectMessages(otherUser);
         }
-
-        // Add click event listeners to usernames in the main chat
-        messagesDiv.addEventListener('click', (e) => {
-            if (e.target.classList.contains('font-bold')) {
-                const otherUser = e.target.textContent.split(':')[0].trim();
-                if (otherUser !== currentUser.email.split('@')[0]) {
-                    openDmWindow(otherUser);
-                }
-            }
-        });
     </script>
 </body>
 </html>
