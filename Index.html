@@ -4,21 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NalloKeMemes Chat</title>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .chat-container {
-            height: 400px;
-        }
-        .reply-message {
-            background-color: #f0f0f0;
-            padding: 5px;
-            margin-bottom: 5px;
-            border-left: 3px solid #007bff;
-        }
-    </style>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
 </head>
 <body class="bg-gray-100">
     <div id="login-container" class="container mx-auto mt-10 p-4">
@@ -26,212 +15,267 @@
         <input type="text" id="username" placeholder="Username" class="border p-2 mb-2 w-full">
         <input type="password" id="password" placeholder="Password" class="border p-2 mb-2 w-full">
         <p class="text-sm text-gray-600 mb-2">Write any random password so that you can access your profile from different devices.</p>
-        <button onclick="login()" class="bg-blue-500 text-white p-2 rounded">Enter Chat</button>
+        <button id="login-btn" class="bg-blue-500 text-white p-2 rounded">Enter Chat</button>
     </div>
 
     <div id="chat-container" class="container mx-auto mt-10 p-4 hidden">
         <h1 class="text-3xl font-bold mb-4">NalloKeMemes Chat</h1>
-        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4 h-96"></div>
         <div class="flex space-x-2">
-            <input type="text" id="message" placeholder="Type a message" class="border p-2 flex-grow">
-            <button onclick="sendMessage()" class="bg-blue-500 text-white p-2 rounded">Send</button>
+            <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
+            <button id="send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
         </div>
     </div>
 
     <div id="dm-container" class="container mx-auto mt-10 p-4 hidden">
-        <h2 class="text-2xl font-bold mb-4">Direct Message with <span id="dm-recipient"></span></h2>
-        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <h2 id="dm-header" class="text-2xl font-bold mb-4"></h2>
+        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4 h-96"></div>
         <div class="flex space-x-2">
-            <input type="text" id="dm-message" placeholder="Type a message" class="border p-2 flex-grow">
-            <button onclick="sendDirectMessage()" class="bg-blue-500 text-white p-2 rounded">Send DM</button>
+            <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
+            <button id="dm-send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
         </div>
-        <button onclick="closeDM()" class="mt-4 bg-gray-500 text-white p-2 rounded">Close DM</button>
+        <button id="back-to-chat-btn" class="mt-4 bg-gray-300 text-black p-2 rounded">Back to Main Chat</button>
     </div>
 
     <script>
         // Firebase configuration
         const firebaseConfig = {
-            // Your Firebase configuration here
+            apiKey: "AIzaSyC9ZEXXr_jER8xQUfnBjfbfo54amQ3LsSU",
+            authDomain: "real-7f191.firebaseapp.com",
+            projectId: "real-7f191",
+            storageBucket: "real-7f191.appspot.com",
+            messagingSenderId: "364774424342",
+            appId: "1:364774424342:web:9a5a7696db204523b29a37",
+            measurementId: "G-KFDQ3KYW58"
         };
 
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+        const db = firebase.firestore();
         const auth = firebase.auth();
 
+        // DOM elements
+        const loginContainer = document.getElementById('login-container');
+        const chatContainer = document.getElementById('chat-container');
+        const dmContainer = document.getElementById('dm-container');
+        const messagesDiv = document.getElementById('messages');
+        const dmMessagesDiv = document.getElementById('dm-messages');
+        const messageInput = document.getElementById('message-input');
+        const dmInput = document.getElementById('dm-input');
+        const sendBtn = document.getElementById('send-btn');
+        const dmSendBtn = document.getElementById('dm-send-btn');
+        const loginBtn = document.getElementById('login-btn');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const backToChatBtn = document.getElementById('back-to-chat-btn');
+        const dmHeader = document.getElementById('dm-header');
+
         let currentUser = null;
-        let replyingTo = null;
-        let currentDMUser = null;
+        let currentDmUser = null;
 
-        function login() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
+        // Check if user is already logged in
+        const savedUsername = localStorage.getItem('username');
+        const savedPassword = localStorage.getItem('password');
+        if (savedUsername && savedPassword) {
+            login(savedUsername, savedPassword);
+        }
 
-            if (!username || !password) {
-                alert('Please enter both username and password');
-                return;
-            }
-
+        // Login function
+        function login(username, password) {
             auth.signInWithEmailAndPassword(username + '@nallokememes.com', password)
                 .then((userCredential) => {
                     currentUser = userCredential.user;
                     localStorage.setItem('username', username);
-                    showChatContainer();
+                    localStorage.setItem('password', password);
+                    loginContainer.classList.add('hidden');
+                    chatContainer.classList.remove('hidden');
+                    loadMessages();
                 })
                 .catch((error) => {
-                    if (error.code === 'auth/user-not-found') {
-                        auth.createUserWithEmailAndPassword(username + '@nallokememes.com', password)
-                            .then((userCredential) => {
-                                currentUser = userCredential.user;
-                                localStorage.setItem('username', username);
-                                showChatContainer();
-                            })
-                            .catch((error) => {
-                                console.error('Error creating user:', error);
-                                alert('Error creating user: ' + error.message);
-                            });
-                    } else {
-                        console.error('Error logging in:', error);
-                        alert('Error logging in: ' + error.message);
-                    }
+                    // If user doesn't exist, create a new account
+                    auth.createUserWithEmailAndPassword(username + '@nallokememes.com', password)
+                        .then((userCredential) => {
+                            currentUser = userCredential.user;
+                            localStorage.setItem('username', username);
+                            localStorage.setItem('password', password);
+                            loginContainer.classList.add('hidden');
+                            chatContainer.classList.remove('hidden');
+                            loadMessages();
+                        })
+                        .catch((error) => {
+                            console.error('Error creating user:', error);
+                            alert('Error creating user. Please try again.');
+                        });
                 });
         }
 
-        function showChatContainer() {
-            document.getElementById('login-container').classList.add('hidden');
-            document.getElementById('chat-container').classList.remove('hidden');
-            loadMessages();
-        }
-
+        // Load messages from Firestore
         function loadMessages() {
-            const messagesRef = database.ref('messages');
-            messagesRef.on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                displayMessage(message);
+            db.collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
+                messagesDiv.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const message = doc.data();
+                    const messageElement = createMessageElement(message, doc.id);
+                    messagesDiv.appendChild(messageElement);
+                });
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
             });
         }
 
-        function displayMessage(message) {
-            const messagesDiv = document.getElementById('messages');
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('mb-2', 'p-2', 'rounded', message.username === currentUser.email.split('@')[0] ? 'bg-blue-100' : 'bg-gray-100');
+        // Create message element
+        function createMessageElement(message, messageId) {
+            const div = document.createElement('div');
+            div.className = 'mb-2 p-2 rounded';
+            div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+
+            const senderSpan = document.createElement('span');
+            senderSpan.className = 'font-bold';
+            senderSpan.textContent = message.sender + ': ';
+
+            const contentSpan = document.createElement('span');
+            contentSpan.textContent = message.content;
+
+            div.appendChild(senderSpan);
+            div.appendChild(contentSpan);
 
             if (message.replyTo) {
-                const replyElement = document.createElement('div');
-                replyElement.classList.add('reply-message');
-                replyElement.textContent = `Replying to ${message.replyTo.username}: ${message.replyTo.text}`;
-                messageElement.appendChild(replyElement);
+                const replyDiv = document.createElement('div');
+                replyDiv.className = 'text-sm text-gray-600 mt-1';
+                replyDiv.textContent = `Replying to: ${message.replyTo.sender}: ${message.replyTo.content}`;
+                div.appendChild(replyDiv);
             }
 
-            const contentElement = document.createElement('div');
-            contentElement.innerHTML = `<strong>${message.username}:</strong> ${message.text}`;
-            messageElement.appendChild(contentElement);
+            div.addEventListener('click', () => showReplyOption(messageId, message));
 
-            const replyButton = document.createElement('button');
-            replyButton.textContent = 'Reply';
-            replyButton.classList.add('text-sm', 'text-blue-500', 'mt-1');
-            replyButton.onclick = () => setReplyingTo(message);
-            messageElement.appendChild(replyButton);
-
-            const profileButton = document.createElement('button');
-            profileButton.textContent = 'Profile';
-            profileButton.classList.add('text-sm', 'text-green-500', 'mt-1', 'ml-2');
-            profileButton.onclick = () => openDirectMessage(message.username);
-            messageElement.appendChild(profileButton);
-
-            messagesDiv.appendChild(messageElement);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return div;
         }
 
-        function setReplyingTo(message) {
-            replyingTo = message;
-            document.getElementById('message').placeholder = `Replying to ${message.username}`;
+        // Show reply option
+        function showReplyOption(messageId, message) {
+            const replyBtn = document.createElement('button');
+            replyBtn.textContent = 'Reply';
+            replyBtn.className = 'bg-gray-200 text-sm p-1 rounded mt-1';
+            replyBtn.addEventListener('click', () => {
+                messageInput.value = `Replying to ${message.sender}: `;
+                messageInput.dataset.replyTo = JSON.stringify({
+                    id: messageId,
+                    sender: message.sender,
+                    content: message.content
+                });
+                messageInput.focus();
+            });
+
+            const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (messageElement && !messageElement.querySelector('button')) {
+                messageElement.appendChild(replyBtn);
+            }
         }
 
+        // Send message
         function sendMessage() {
-            const messageInput = document.getElementById('message');
-            const message = messageInput.value.trim();
-            if (message) {
-                const username = currentUser.email.split('@')[0];
-                const newMessage = {
-                    username: username,
-                    text: message,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
+            const content = messageInput.value.trim();
+            if (content) {
+                const replyTo = messageInput.dataset.replyTo ? JSON.parse(messageInput.dataset.replyTo) : null;
+                const message = {
+                    sender: currentUser.email.split('@')[0],
+                    content: content,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    replyTo: replyTo
                 };
 
-                if (replyingTo) {
-                    newMessage.replyTo = {
-                        username: replyingTo.username,
-                        text: replyingTo.text
-                    };
-                }
-
-                database.ref('messages').push(newMessage);
-                messageInput.value = '';
-                replyingTo = null;
-                messageInput.placeholder = 'Type a message';
+                db.collection('messages').add(message)
+                    .then(() => {
+                        messageInput.value = '';
+                        messageInput.dataset.replyTo = '';
+                    })
+                    .catch((error) => {
+                        console.error('Error sending message:', error);
+                    });
             }
         }
 
-        function openDirectMessage(username) {
-            currentDMUser = username;
-            document.getElementById('chat-container').classList.add('hidden');
-            document.getElementById('dm-container').classList.remove('hidden');
-            document.getElementById('dm-recipient').textContent = username;
-            loadDirectMessages(username);
-        }
-
-        function loadDirectMessages(username) {
-            const currentUsername = currentUser.email.split('@')[0];
-            const dmKey = [currentUsername, username].sort().join('-');
-            const dmRef = database.ref('directMessages').child(dmKey);
-            
-            dmRef.on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                displayDirectMessage(message);
+        // Load direct messages
+        function loadDirectMessages(otherUser) {
+            const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
+            db.collection('directMessages').doc(chatId).collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
+                dmMessagesDiv.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const message = doc.data();
+                    const messageElement = createMessageElement(message, doc.id);
+                    dmMessagesDiv.appendChild(messageElement);
+                });
+                dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
             });
         }
 
-        function displayDirectMessage(message) {
-            const messagesDiv = document.getElementById('dm-messages');
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('mb-2', 'p-2', 'rounded', message.username === currentUser.email.split('@')[0] ? 'bg-blue-100' : 'bg-gray-100');
-            messageElement.innerHTML = `<strong>${message.username}:</strong> ${message.text}`;
-            messagesDiv.appendChild(messageElement);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
+        // Send direct message
         function sendDirectMessage() {
-            const messageInput = document.getElementById('dm-message');
-            const message = messageInput.value.trim();
-            if (message) {
-                const username = currentUser.email.split('@')[0];
-                const dmKey = [username, currentDMUser].sort().join('-');
-                const newMessage = {
-                    username: username,
-                    text: message,
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
+            const content = dmInput.value.trim();
+            if (content && currentDmUser) {
+                const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
+                const message = {
+                    sender: currentUser.email.split('@')[0],
+                    content: content,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 };
-                database.ref('directMessages').child(dmKey).push(newMessage);
-                messageInput.value = '';
+
+                db.collection('directMessages').doc(chatId).collection('messages').add(message)
+                    .then(() => {
+                        dmInput.value = '';
+                    })
+                    .catch((error) => {
+                        console.error('Error sending direct message:', error);
+                    });
             }
         }
 
-        function closeDM() {
-            document.getElementById('dm-container').classList.add('hidden');
-            document.getElementById('chat-container').classList.remove('hidden');
-            currentDMUser = null;
-            const dmMessagesDiv = document.getElementById('dm-messages');
-            dmMessagesDiv.innerHTML = '';
+        // Event listeners
+        loginBtn.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+            if (username && password) {
+                login(username, password);
+            }
+        });
+
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        dmSendBtn.addEventListener('click', sendDirectMessage);
+        dmInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendDirectMessage();
+            }
+        });
+
+        backToChatBtn.addEventListener('click', () => {
+            dmContainer.classList.add('hidden');
+            chatContainer.classList.remove('hidden');
+            currentDmUser = null;
+        });
+
+        // Function to open DM window
+        function openDmWindow(otherUser) {
+            currentDmUser = otherUser;
+            chatContainer.classList.add('hidden');
+            dmContainer.classList.remove('hidden');
+            dmHeader.textContent = `Direct Message with ${otherUser}`;
+            loadDirectMessages(otherUser);
         }
 
-        // Check for saved username and attempt auto-login
-        window.onload = function() {
-            const savedUsername = localStorage.getItem('username');
-            if (savedUsername) {
-                document.getElementById('username').value = savedUsername;
+        // Add click event listeners to usernames in the main chat
+        messagesDiv.addEventListener('click', (e) => {
+            if (e.target.classList.contains('font-bold')) {
+                const otherUser = e.target.textContent.split(':')[0].trim();
+                if (otherUser !== currentUser.email.split('@')[0]) {
+                    openDmWindow(otherUser);
+                }
             }
-        };
+        });
     </script>
 </body>
 </html>
