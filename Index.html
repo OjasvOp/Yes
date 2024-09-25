@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aesthetic Chat App</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .chat-container {
+            height: calc(100vh - 200px);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="login-container" class="container mx-auto mt-10 p-4">
+        <h1 class="text-3xl font-bold mb-4">Welcome to Aesthetic Chat</h1>
+        <input type="text" id="username" placeholder="Enter your username" class="w-full p-2 mb-4 border rounded">
+        <button id="login-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Enter Chat</button>
+    </div>
+
+    <div id="chat-container" class="container mx-auto mt-10 p-4 hidden">
+        <h1 class="text-3xl font-bold mb-4">Aesthetic Chat</h1>
+        <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div class="flex space-x-2">
+            <input type="text" id="message-input" placeholder="Type your message..." class="flex-grow p-2 border rounded">
+            <button id="send-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Send</button>
+        </div>
+        <div class="mt-4">
+            <input type="text" id="dm-username" placeholder="Username for DM" class="p-2 border rounded mr-2">
+            <button id="dm-btn" class="bg-green-500 text-white px-4 py-2 rounded">Send DM</button>
+        </div>
+    </div>
+
+    <script>
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyC9ZEXXr_jER8xQUfnBjfbfo54amQ3LsSU",
+            authDomain: "real-7f191.firebaseapp.com",
+            projectId: "real-7f191",
+            storageBucket: "real-7f191.appspot.com",
+            messagingSenderId: "364774424342",
+            appId: "1:364774424342:web:9a5a7696db204523b29a37",
+            measurementId: "G-KFDQ3KYW58"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        let currentUser = null;
+
+        // DOM elements
+        const loginContainer = document.getElementById('login-container');
+        const chatContainer = document.getElementById('chat-container');
+        const usernameInput = document.getElementById('username');
+        const loginBtn = document.getElementById('login-btn');
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const dmUsernameInput = document.getElementById('dm-username');
+        const dmBtn = document.getElementById('dm-btn');
+
+        // Login functionality
+        loginBtn.addEventListener('click', async () => {
+            const username = usernameInput.value.trim();
+            if (username) {
+                const userDoc = await db.collection('users').doc(username).get();
+                if (userDoc.exists) {
+                    alert('Username already taken. Please choose another one.');
+                } else {
+                    currentUser = username;
+                    await db.collection('users').doc(username).set({});
+                    loginContainer.classList.add('hidden');
+                    chatContainer.classList.remove('hidden');
+                    loadMessages();
+                }
+            }
+        });
+
+        // Load messages
+        function loadMessages() {
+            db.collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
+                messagesDiv.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const message = doc.data();
+                    const messageElement = document.createElement('div');
+                    messageElement.classList.add('mb-2', 'p-2', 'rounded');
+                    
+                    if (message.to) {
+                        messageElement.classList.add('bg-green-100');
+                        messageElement.textContent = `${message.from} to ${message.to} (DM): ${message.text}`;
+                    } else {
+                        messageElement.classList.add('bg-gray-100');
+                        messageElement.textContent = `${message.from}: ${message.text}`;
+                    }
+
+                    messageElement.addEventListener('click', () => {
+                        messageInput.value = `@${message.from} `;
+                        messageInput.focus();
+                    });
+
+                    messagesDiv.appendChild(messageElement);
+                });
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+        }
+
+        // Send message functionality
+        sendBtn.addEventListener('click', () => {
+            const text = messageInput.value.trim();
+            if (text) {
+                const mention = text.match(/@(\w+)/);
+                if (mention) {
+                    const to = mention[1];
+                    db.collection('messages').add({
+                        from: currentUser,
+                        to: to,
+                        text: text,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else {
+                    db.collection('messages').add({
+                        from: currentUser,
+                        text: text,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+                messageInput.value = '';
+            }
+        });
+
+        // Direct message functionality
+        dmBtn.addEventListener('click', () => {
+            const to = dmUsernameInput.value.trim();
+            const text = messageInput.value.trim();
+            if (to && text) {
+                db.collection('messages').add({
+                    from: currentUser,
+                    to: to,
+                    text: text,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                messageInput.value = '';
+                dmUsernameInput.value = '';
+            }
+        });
+    </script>
+</body>
+</html>
