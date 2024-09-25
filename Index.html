@@ -3,151 +3,235 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aesthetic Chat App</title>
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>NalloKeMemes Chat</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .chat-container {
-            height: calc(100vh - 200px);
+            height: 400px;
+        }
+        .reply-message {
+            background-color: #f0f0f0;
+            padding: 5px;
+            margin-bottom: 5px;
+            border-left: 3px solid #007bff;
         }
     </style>
 </head>
 <body class="bg-gray-100">
     <div id="login-container" class="container mx-auto mt-10 p-4">
-        <h1 class="text-3xl font-bold mb-4">Welcome to Aesthetic Chat</h1>
-        <input type="text" id="username" placeholder="Enter your username" class="w-full p-2 mb-4 border rounded">
-        <button id="login-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Enter Chat</button>
+        <h1 class="text-3xl font-bold mb-4">Welcome to NalloKeMemes Chat</h1>
+        <input type="text" id="username" placeholder="Username" class="border p-2 mb-2 w-full">
+        <input type="password" id="password" placeholder="Password" class="border p-2 mb-2 w-full">
+        <p class="text-sm text-gray-600 mb-2">Write any random password so that you can access your profile from different devices.</p>
+        <button onclick="login()" class="bg-blue-500 text-white p-2 rounded">Enter Chat</button>
     </div>
 
     <div id="chat-container" class="container mx-auto mt-10 p-4 hidden">
-        <h1 class="text-3xl font-bold mb-4">Aesthetic Chat</h1>
+        <h1 class="text-3xl font-bold mb-4">NalloKeMemes Chat</h1>
         <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
         <div class="flex space-x-2">
-            <input type="text" id="message-input" placeholder="Type your message..." class="flex-grow p-2 border rounded">
-            <button id="send-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Send</button>
-        </div>
-        <div class="mt-4">
-            <input type="text" id="dm-username" placeholder="Username for DM" class="p-2 border rounded mr-2">
-            <button id="dm-btn" class="bg-green-500 text-white px-4 py-2 rounded">Send DM</button>
+            <input type="text" id="message" placeholder="Type a message" class="border p-2 flex-grow">
+            <button onclick="sendMessage()" class="bg-blue-500 text-white p-2 rounded">Send</button>
         </div>
     </div>
 
+    <div id="dm-container" class="container mx-auto mt-10 p-4 hidden">
+        <h2 class="text-2xl font-bold mb-4">Direct Message with <span id="dm-recipient"></span></h2>
+        <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md overflow-y-auto mb-4"></div>
+        <div class="flex space-x-2">
+            <input type="text" id="dm-message" placeholder="Type a message" class="border p-2 flex-grow">
+            <button onclick="sendDirectMessage()" class="bg-blue-500 text-white p-2 rounded">Send DM</button>
+        </div>
+        <button onclick="closeDM()" class="mt-4 bg-gray-500 text-white p-2 rounded">Close DM</button>
+    </div>
+
     <script>
-        // Your Firebase configuration
+        // Firebase configuration
         const firebaseConfig = {
-            apiKey: "AIzaSyC9ZEXXr_jER8xQUfnBjfbfo54amQ3LsSU",
-            authDomain: "real-7f191.firebaseapp.com",
-            projectId: "real-7f191",
-            storageBucket: "real-7f191.appspot.com",
-            messagingSenderId: "364774424342",
-            appId: "1:364774424342:web:9a5a7696db204523b29a37",
-            measurementId: "G-KFDQ3KYW58"
+            // Your Firebase configuration here
         };
 
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+        const database = firebase.database();
         const auth = firebase.auth();
 
         let currentUser = null;
+        let replyingTo = null;
+        let currentDMUser = null;
 
-        // DOM elements
-        const loginContainer = document.getElementById('login-container');
-        const chatContainer = document.getElementById('chat-container');
-        const usernameInput = document.getElementById('username');
-        const loginBtn = document.getElementById('login-btn');
-        const messagesDiv = document.getElementById('messages');
-        const messageInput = document.getElementById('message-input');
-        const sendBtn = document.getElementById('send-btn');
-        const dmUsernameInput = document.getElementById('dm-username');
-        const dmBtn = document.getElementById('dm-btn');
+        function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
 
-        // Login functionality
-        loginBtn.addEventListener('click', async () => {
-            const username = usernameInput.value.trim();
-            if (username) {
-                const userDoc = await db.collection('users').doc(username).get();
-                if (userDoc.exists) {
-                    alert('Username already taken. Please choose another one.');
-                } else {
-                    currentUser = username;
-                    await db.collection('users').doc(username).set({});
-                    loginContainer.classList.add('hidden');
-                    chatContainer.classList.remove('hidden');
-                    loadMessages();
-                }
+            if (!username || !password) {
+                alert('Please enter both username and password');
+                return;
             }
-        });
 
-        // Load messages
-        function loadMessages() {
-            db.collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
-                messagesDiv.innerHTML = '';
-                snapshot.forEach((doc) => {
-                    const message = doc.data();
-                    const messageElement = document.createElement('div');
-                    messageElement.classList.add('mb-2', 'p-2', 'rounded');
-                    
-                    if (message.to) {
-                        messageElement.classList.add('bg-green-100');
-                        messageElement.textContent = `${message.from} to ${message.to} (DM): ${message.text}`;
+            auth.signInWithEmailAndPassword(username + '@nallokememes.com', password)
+                .then((userCredential) => {
+                    currentUser = userCredential.user;
+                    localStorage.setItem('username', username);
+                    showChatContainer();
+                })
+                .catch((error) => {
+                    if (error.code === 'auth/user-not-found') {
+                        auth.createUserWithEmailAndPassword(username + '@nallokememes.com', password)
+                            .then((userCredential) => {
+                                currentUser = userCredential.user;
+                                localStorage.setItem('username', username);
+                                showChatContainer();
+                            })
+                            .catch((error) => {
+                                console.error('Error creating user:', error);
+                                alert('Error creating user: ' + error.message);
+                            });
                     } else {
-                        messageElement.classList.add('bg-gray-100');
-                        messageElement.textContent = `${message.from}: ${message.text}`;
+                        console.error('Error logging in:', error);
+                        alert('Error logging in: ' + error.message);
                     }
-
-                    messageElement.addEventListener('click', () => {
-                        messageInput.value = `@${message.from} `;
-                        messageInput.focus();
-                    });
-
-                    messagesDiv.appendChild(messageElement);
                 });
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function showChatContainer() {
+            document.getElementById('login-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.remove('hidden');
+            loadMessages();
+        }
+
+        function loadMessages() {
+            const messagesRef = database.ref('messages');
+            messagesRef.on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                displayMessage(message);
             });
         }
 
-        // Send message functionality
-        sendBtn.addEventListener('click', () => {
-            const text = messageInput.value.trim();
-            if (text) {
-                const mention = text.match(/@(\w+)/);
-                if (mention) {
-                    const to = mention[1];
-                    db.collection('messages').add({
-                        from: currentUser,
-                        to: to,
-                        text: text,
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                } else {
-                    db.collection('messages').add({
-                        from: currentUser,
-                        text: text,
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-                messageInput.value = '';
-            }
-        });
+        function displayMessage(message) {
+            const messagesDiv = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('mb-2', 'p-2', 'rounded', message.username === currentUser.email.split('@')[0] ? 'bg-blue-100' : 'bg-gray-100');
 
-        // Direct message functionality
-        dmBtn.addEventListener('click', () => {
-            const to = dmUsernameInput.value.trim();
-            const text = messageInput.value.trim();
-            if (to && text) {
-                db.collection('messages').add({
-                    from: currentUser,
-                    to: to,
-                    text: text,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                messageInput.value = '';
-                dmUsernameInput.value = '';
+            if (message.replyTo) {
+                const replyElement = document.createElement('div');
+                replyElement.classList.add('reply-message');
+                replyElement.textContent = `Replying to ${message.replyTo.username}: ${message.replyTo.text}`;
+                messageElement.appendChild(replyElement);
             }
-        });
+
+            const contentElement = document.createElement('div');
+            contentElement.innerHTML = `<strong>${message.username}:</strong> ${message.text}`;
+            messageElement.appendChild(contentElement);
+
+            const replyButton = document.createElement('button');
+            replyButton.textContent = 'Reply';
+            replyButton.classList.add('text-sm', 'text-blue-500', 'mt-1');
+            replyButton.onclick = () => setReplyingTo(message);
+            messageElement.appendChild(replyButton);
+
+            const profileButton = document.createElement('button');
+            profileButton.textContent = 'Profile';
+            profileButton.classList.add('text-sm', 'text-green-500', 'mt-1', 'ml-2');
+            profileButton.onclick = () => openDirectMessage(message.username);
+            messageElement.appendChild(profileButton);
+
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function setReplyingTo(message) {
+            replyingTo = message;
+            document.getElementById('message').placeholder = `Replying to ${message.username}`;
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('message');
+            const message = messageInput.value.trim();
+            if (message) {
+                const username = currentUser.email.split('@')[0];
+                const newMessage = {
+                    username: username,
+                    text: message,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                };
+
+                if (replyingTo) {
+                    newMessage.replyTo = {
+                        username: replyingTo.username,
+                        text: replyingTo.text
+                    };
+                }
+
+                database.ref('messages').push(newMessage);
+                messageInput.value = '';
+                replyingTo = null;
+                messageInput.placeholder = 'Type a message';
+            }
+        }
+
+        function openDirectMessage(username) {
+            currentDMUser = username;
+            document.getElementById('chat-container').classList.add('hidden');
+            document.getElementById('dm-container').classList.remove('hidden');
+            document.getElementById('dm-recipient').textContent = username;
+            loadDirectMessages(username);
+        }
+
+        function loadDirectMessages(username) {
+            const currentUsername = currentUser.email.split('@')[0];
+            const dmKey = [currentUsername, username].sort().join('-');
+            const dmRef = database.ref('directMessages').child(dmKey);
+            
+            dmRef.on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                displayDirectMessage(message);
+            });
+        }
+
+        function displayDirectMessage(message) {
+            const messagesDiv = document.getElementById('dm-messages');
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('mb-2', 'p-2', 'rounded', message.username === currentUser.email.split('@')[0] ? 'bg-blue-100' : 'bg-gray-100');
+            messageElement.innerHTML = `<strong>${message.username}:</strong> ${message.text}`;
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function sendDirectMessage() {
+            const messageInput = document.getElementById('dm-message');
+            const message = messageInput.value.trim();
+            if (message) {
+                const username = currentUser.email.split('@')[0];
+                const dmKey = [username, currentDMUser].sort().join('-');
+                const newMessage = {
+                    username: username,
+                    text: message,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                };
+                database.ref('directMessages').child(dmKey).push(newMessage);
+                messageInput.value = '';
+            }
+        }
+
+        function closeDM() {
+            document.getElementById('dm-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.remove('hidden');
+            currentDMUser = null;
+            const dmMessagesDiv = document.getElementById('dm-messages');
+            dmMessagesDiv.innerHTML = '';
+        }
+
+        // Check for saved username and attempt auto-login
+        window.onload = function() {
+            const savedUsername = localStorage.getItem('username');
+            if (savedUsername) {
+                document.getElementById('username').value = savedUsername;
+            }
+        };
     </script>
 </body>
 </html>
