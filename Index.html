@@ -23,6 +23,7 @@
         .chat-container {
             flex-grow: 1;
             overflow-y: auto;
+            padding-bottom: 80px; /* Adjust this value to control space above input box */
         }
         .reply-preview {
             font-size: 0.8em;
@@ -30,19 +31,13 @@
             margin-bottom: 5px;
         }
         .message-input-container {
-            position: sticky;
+            position: fixed;
             bottom: 0;
+            left: 0;
+            right: 0;
             background-color: white;
             padding: 10px;
             border-top: 1px solid #e5e7eb;
-        }
-        .unread-messages-marker {
-            background-color: #fef3c7;
-            color: #92400e;
-            text-align: center;
-            padding: 5px;
-            margin: 10px 0;
-            border-radius: 5px;
         }
     </style>
 </head>
@@ -57,7 +52,7 @@
 
     <div id="chat-container" class="full-page container mx-auto p-4 hidden">
         <h1 class="text-3xl font-bold mb-4">NalloKeMemes Chat</h1>
-        <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs <span id="dm-notification" class="bg-red-500 text-white rounded-full px-2 py-1 text-xs hidden">1</span></button>
+        <button id="open-dms-btn" class="bg-green-500 text-white p-2 rounded mb-4">Open DMs</button>
         <div id="messages" class="chat-container bg-white p-4 rounded-lg shadow-md mb-4"></div>
         <div id="reply-preview" class="reply-preview hidden"></div>
         <div class="message-input-container">
@@ -115,7 +110,6 @@
         const dmHeader = document.getElementById('dm-header');
         const passwordCriteria = document.getElementById('password-criteria');
         const openDmsBtn = document.getElementById('open-dms-btn');
-        const dmNotification = document.getElementById('dm-notification');
         const replyPreview = document.getElementById('reply-preview');
         const dmReplyPreview = document.getElementById('dm-reply-preview');
 
@@ -123,7 +117,6 @@
         let currentDmUser = null;
         let replyingTo = null;
         let dmReplyingTo = null;
-        let lastSeenMessageTimestamp = null;
 
         // Check if user is already logged in
         const savedUsername = localStorage.getItem('username');
@@ -148,7 +141,6 @@
                     loginContainer.classList.add('hidden');
                     chatContainer.classList.remove('hidden');
                     loadMessages();
-                    checkNewDms();
                 })
                 .catch((error) => {
                     // If user doesn't exist, create a new account
@@ -160,7 +152,6 @@
                             loginContainer.classList.add('hidden');
                             chatContainer.classList.remove('hidden');
                             loadMessages();
-                            checkNewDms();
                         })
                         .catch((error) => {
                             console.error('Error creating user:', error);
@@ -173,21 +164,12 @@
         function loadMessages() {
             db.collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
                 messagesDiv.innerHTML = '';
-                let unreadMarkerAdded = false;
                 snapshot.forEach((doc) => {
                     const message = doc.data();
-                    if (!unreadMarkerAdded && lastSeenMessageTimestamp && message.timestamp && message.timestamp.toMillis() > lastSeenMessageTimestamp) {
-                        const unreadMarker = document.createElement('div');
-                        unreadMarker.className = 'unread-messages-marker';
-                        unreadMarker.textContent = 'Unread Messages';
-                        messagesDiv.appendChild(unreadMarker);
-                        unreadMarkerAdded = true;
-                    }
                     const messageElement = createMessageElement(message, doc.id);
                     messagesDiv.appendChild(messageElement);
                 });
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                lastSeenMessageTimestamp = Date.now();
             });
         }
 
@@ -321,7 +303,7 @@
             });
         }
 
-        // Create DM message element (continued)
+        // Create DM message element
         function createDmMessageElement(message, messageId) {
             const div = document.createElement('div');
             div.className = 'mb-2 p-2 rounded';
@@ -474,9 +456,6 @@
             db.collection('directMessages').doc(chatId).set({
                 participants: [currentUser.email.split('@')[0], otherUser]
             }, { merge: true });
-
-            // Reset DM notification
-            dmNotification.classList.add('hidden');
         }
 
         // Function to handle user logout
@@ -491,24 +470,6 @@
             }).catch((error) => {
                 console.error('Error signing out:', error);
             });
-        }
-
-        // Function to check for new DMs
-        function checkNewDms() {
-            const currentUsername = currentUser.email.split('@')[0];
-            db.collection('directMessages')
-                .where('participants', 'array-contains', currentUsername)
-                .onSnapshot((snapshot) => {
-                    let hasNewMessages = false;
-                    snapshot.docChanges().forEach((change) => {
-                        if (change.type === 'modified' || change.type === 'added') {
-                            hasNewMessages = true;
-                        }
-                    });
-                    if (hasNewMessages) {
-                        dmNotification.classList.remove('hidden');
-                    }
-                });
         }
 
         // Event listeners
@@ -557,7 +518,6 @@
                     loginContainer.classList.add('hidden');
                     chatContainer.classList.remove('hidden');
                     loadMessages();
-                    checkNewDms();
                 } else {
                     loginContainer.classList.remove('hidden');
                     chatContainer.classList.add('hidden');
