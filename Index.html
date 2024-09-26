@@ -8,6 +8,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js"></script>
     <style>
         body, html {
             height: 100%;
@@ -23,7 +24,7 @@
         .chat-container {
             flex-grow: 1;
             overflow-y: auto;
-            padding-bottom: 100px; /* Increased padding to prevent overlap */
+            padding-bottom: 70px;
         }
         .reply-preview {
             font-size: 0.8em;
@@ -40,7 +41,38 @@
             border-top: 1px solid #e5e7eb;
         }
         .message-input-spacer {
-            height: 80px; /* Matches the height of the input container */
+            height: 70px;
+        }
+        .message {
+            max-width: 80%;
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            word-wrap: break-word;
+        }
+        .sent {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .received {
+            background-color: #ffffff;
+            align-self: flex-start;
+            margin-right: auto;
+        }
+        .message-content {
+            display: inline-block;
+        }
+        .message-time {
+            font-size: 0.7em;
+            color: #999;
+            margin-top: 2px;
+            text-align: right;
+        }
+        .image-preview {
+            max-width: 100px;
+            max-height: 100px;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -61,9 +93,12 @@
         <div class="message-input-spacer"></div>
         <div class="message-input-container">
             <div class="flex space-x-2">
+                <input type="file" id="image-input" accept="image/*" class="hidden">
+                <button id="image-btn" class="bg-gray-300 text-black p-2 rounded">📷</button>
                 <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
                 <button id="send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
             </div>
+            <div id="image-preview" class="image-preview"></div>
         </div>
     </div>
 
@@ -74,9 +109,12 @@
         <div class="message-input-spacer"></div>
         <div class="message-input-container">
             <div class="flex space-x-2">
+                <input type="file" id="dm-image-input" accept="image/*" class="hidden">
+                <button id="dm-image-btn" class="bg-gray-300 text-black p-2 rounded">📷</button>
                 <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
                 <button id="dm-send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
             </div>
+            <div id="dm-image-preview" class="image-preview"></div>
         </div>
         <button id="back-to-chat-btn" class="mt-4 bg-gray-300 text-black p-2 rounded">Back to Main Chat</button>
     </div>
@@ -97,6 +135,7 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
+        const storage = firebase.storage();
 
         // DOM elements
         const loginContainer = document.getElementById('login-container');
@@ -117,11 +156,19 @@
         const openDmsBtn = document.getElementById('open-dms-btn');
         const replyPreview = document.getElementById('reply-preview');
         const dmReplyPreview = document.getElementById('dm-reply-preview');
+        const imageInput = document.getElementById('image-input');
+        const imageBtn = document.getElementById('image-btn');
+        const imagePreview = document.getElementById('image-preview');
+        const dmImageInput = document.getElementById('dm-image-input');
+        const dmImageBtn = document.getElementById('dm-image-btn');
+        const dmImagePreview = document.getElementById('dm-image-preview');
 
         let currentUser = null;
         let currentDmUser = null;
         let replyingTo = null;
         let dmReplyingTo = null;
+        let selectedImage = null;
+        let selectedDmImage = null;
 
         // Check if user is already logged in
         const savedUsername = localStorage.getItem('username');
@@ -181,8 +228,7 @@
         // Create message element
         function createMessageElement(message, messageId) {
             const div = document.createElement('div');
-            div.className = 'mb-2 p-2 rounded';
-            div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+            div.className = `message ${message.sender === currentUser.email.split('@')[0] ? 'sent' : 'received'}`;
             div.dataset.messageId = messageId;
 
             if (message.replyTo) {
@@ -192,11 +238,8 @@
                 div.appendChild(replyDiv);
             }
 
-            const messageContent = document.createElement('div');
-            messageContent.className = 'flex justify-between items-start';
-
-            const leftPart = document.createElement('div');
-            leftPart.className = 'flex-grow';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
 
             const senderSpan = document.createElement('span');
             senderSpan.className = 'font-bold cursor-pointer';
@@ -206,40 +249,44 @@
                     openDmWindow(message.sender);
                 }
             });
+            contentDiv.appendChild(senderSpan);
 
-            const contentSpan = document.createElement('span');
-            contentSpan.textContent = message.content;
+            if (message.imageUrl) {
+                const img = document.createElement('img');
+                img.src = message.imageUrl;
+                img.className = 'max-w-full h-auto rounded';
+                contentDiv.appendChild(img);
+            } else {
+                const contentSpan = document.createElement('span');
+                contentSpan.textContent = message.content;
+                contentDiv.appendChild(contentSpan);
+            }
 
-            leftPart.appendChild(senderSpan);
-            leftPart.appendChild(contentSpan);
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = formatTimestamp(message.timestamp);
 
-            const rightPart = document.createElement('div');
-            rightPart.className = 'flex items-center';
+            div.appendChild(contentDiv);
+            div.appendChild(timeDiv);
 
-            const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-xs text-gray-500 mr-2';
-            timeSpan.textContent = formatTimestamp(message.timestamp);
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'flex mt-2';
 
             const replyBtn = document.createElement('button');
             replyBtn.textContent = 'Reply';
             replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
             replyBtn.addEventListener('click', () => showReplyOption(messageId, message));
-
-            rightPart.appendChild(timeSpan);
-            rightPart.appendChild(replyBtn);
+            actionsDiv.appendChild(replyBtn);
 
             if (message.sender === currentUser.email.split('@')[0]) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
                 deleteBtn.addEventListener('click', () => deleteMessage(messageId));
-                rightPart.appendChild(deleteBtn);
+                actionsDiv.appendChild(deleteBtn);
             }
 
-            messageContent.appendChild(leftPart);
-            messageContent.appendChild(rightPart);
-
-            div.appendChild(messageContent);
+            div.appendChild(actionsDiv);
 
             return div;
         }
@@ -260,9 +307,9 @@
         }
 
         // Send message
-        function sendMessage() {
+        async function sendMessage() {
             const content = messageInput.value.trim();
-            if (content) {
+            if (content || selectedImage) {
                 const message = {
                     sender: currentUser.email.split('@')[0],
                     content: content,
@@ -270,12 +317,19 @@
                     replyTo: replyingTo
                 };
 
+                if (selectedImage) {
+                    const imageUrl = await uploadImage(selectedImage);
+                    message.imageUrl = imageUrl;
+                }
+
                 db.collection('messages').add(message)
                     .then(() => {
                         messageInput.value = '';
                         replyingTo = null;
                         replyPreview.textContent = '';
                         replyPreview.classList.add('hidden');
+                        selectedImage = null;
+                        imagePreview.innerHTML = '';
                     })
                     .catch((error) => {
                         console.error('Error sending message:', error);
@@ -311,8 +365,7 @@
         // Create DM message element
         function createDmMessageElement(message, messageId) {
             const div = document.createElement('div');
-            div.className = 'mb-2 p-2 rounded';
-            div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+            div.className = `message ${message.sender === currentUser.email.split('@')[0] ? 'sent' : 'received'}`;
 
             if (message.replyTo) {
                 const replyDiv = document.createElement('div');
@@ -321,49 +374,50 @@
                 div.appendChild(replyDiv);
             }
 
-            const messageContent = document.createElement('div');
-            messageContent.className = 'flex justify-between items-start';
-
-            const leftPart = document.createElement('div');
-            leftPart.className = 'flex-grow';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
 
             const senderSpan = document.createElement('span');
             senderSpan.className = 'font-bold';
             senderSpan.textContent = message.sender + ': ';
+            contentDiv.appendChild(senderSpan);
 
-            const contentSpan = document.createElement('span');
-            contentSpan.textContent = message.content;
+            if (message.imageUrl) {
+                const img = document.createElement('img');
+                img.src = message.imageUrl;
+                img.className = 'max-w-full h-auto rounded';
+                contentDiv.appendChild(img);
+            } else {
+                const contentSpan = document.createElement('span');
+                contentSpan.textContent = message.content;
+                contentDiv.appendChild(contentSpan);
+            }
 
-            leftPart.appendChild(senderSpan);
-            leftPart.appendChild(contentSpan);
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = formatTimestamp(message.timestamp);
 
-            const rightPart = document.createElement('div');
-            rightPart.className = 'flex items-center';
+            div.appendChild(contentDiv);
+            div.appendChild(timeDiv);
 
-            const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-xs text-gray-500 mr-2';
-            timeSpan.textContent = formatTimestamp(message.timestamp);
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'flex mt-2';
 
             const replyBtn = document.createElement('button');
             replyBtn.textContent = 'Reply';
             replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
             replyBtn.addEventListener('click', () => showDmReplyOption(messageId, message));
-
-            rightPart.appendChild(timeSpan);
-            rightPart.appendChild(replyBtn);
+            actionsDiv.appendChild(replyBtn);
 
             if (message.sender === currentUser.email.split('@')[0]) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
                 deleteBtn.addEventListener('click', () => deleteDmMessage(messageId));
-                rightPart.appendChild(deleteBtn);
+                actionsDiv.appendChild(deleteBtn);
             }
 
-            messageContent.appendChild(leftPart);
-            messageContent.appendChild(rightPart);
-
-            div.appendChild(messageContent);
+            div.appendChild(actionsDiv);
 
             return div;
         }
@@ -377,9 +431,9 @@
         }
 
         // Send direct message
-        function sendDirectMessage() {
+        async function sendDirectMessage() {
             const content = dmInput.value.trim();
-            if (content && currentDmUser) {
+            if (content || selectedDmImage) {
                 const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
                 const message = {
                     sender: currentUser.email.split('@')[0],
@@ -388,12 +442,19 @@
                     replyTo: dmReplyingTo
                 };
 
+                if (selectedDmImage) {
+                    const imageUrl = await uploadImage(selectedDmImage);
+                    message.imageUrl = imageUrl;
+                }
+
                 db.collection('directMessages').doc(chatId).collection('messages').add(message)
                     .then(() => {
                         dmInput.value = '';
                         dmReplyingTo = null;
                         dmReplyPreview.textContent = '';
                         dmReplyPreview.classList.add('hidden');
+                        selectedDmImage = null;
+                        dmImagePreview.innerHTML = '';
                     })
                     .catch((error) => {
                         console.error('Error sending direct message:', error);
@@ -477,6 +538,14 @@
             });
         }
 
+        // Function to upload image
+        async function uploadImage(file) {
+            const storageRef = storage.ref();
+            const fileRef = storageRef.child(`images/${Date.now()}_${file.name}`);
+            await fileRef.put(file);
+            return await fileRef.getDownloadURL();
+        }
+
         // Event listeners
         loginBtn.addEventListener('click', () => {
             const username = usernameInput.value.trim();
@@ -507,6 +576,26 @@
         });
 
         openDmsBtn.addEventListener('click', openDmsWindow);
+
+        imageBtn.addEventListener('click', () => imageInput.click());
+        imageInput.addEventListener('change', (e) => {
+            selectedImage = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                imagePreview.innerHTML = `<img src="${e.target.result}" class="image-preview">`;
+            };
+            reader.readAsDataURL(selectedImage);
+        });
+
+        dmImageBtn.addEventListener('click', () => dmImageInput.click());
+        dmImageInput.addEventListener('change', (e) => {
+            selectedDmImage = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                dmImagePreview.innerHTML = `<img src="${e.target.result}" class="image-preview">`;
+            };
+            reader.readAsDataURL(selectedDmImage);
+        });
 
         // Add logout button
         const logoutBtn = document.createElement('button');
