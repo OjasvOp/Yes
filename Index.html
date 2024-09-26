@@ -8,6 +8,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js"></script>
     <style>
         body, html {
             height: 100%;
@@ -23,7 +24,7 @@
         .chat-container {
             flex-grow: 1;
             overflow-y: auto;
-            padding-bottom: 100px; /* Increased padding to prevent overlap */
+            padding-bottom: 80px;
         }
         .reply-preview {
             font-size: 0.8em;
@@ -40,7 +41,37 @@
             border-top: 1px solid #e5e7eb;
         }
         .message-input-spacer {
-            height: 80px; /* Matches the height of the input container */
+            height: 80px;
+        }
+        .message {
+            max-width: 70%;
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            word-wrap: break-word;
+        }
+        .message-sent {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .message-received {
+            background-color: #fff;
+            align-self: flex-start;
+            margin-right: auto;
+        }
+        .message-content {
+            margin-bottom: 4px;
+        }
+        .message-time {
+            font-size: 0.7em;
+            color: #999;
+            text-align: right;
+        }
+        .image-preview {
+            max-width: 100px;
+            max-height: 100px;
+            margin-right: 10px;
         }
     </style>
 </head>
@@ -61,24 +92,32 @@
         <div class="message-input-spacer"></div>
         <div class="message-input-container">
             <div class="flex space-x-2">
+                <input type="file" id="image-input" accept="image/*" class="hidden">
+                <button id="image-btn" class="bg-gray-300 text-black p-2 rounded">📷</button>
                 <input type="text" id="message-input" placeholder="Type your message..." class="border p-2 flex-grow">
                 <button id="send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
             </div>
+            <div id="image-preview-container" class="mt-2"></div>
         </div>
     </div>
 
     <div id="dm-container" class="full-page container mx-auto p-4 hidden">
-        <h2 id="dm-header" class="text-2xl font-bold mb-4"></h2>
+        <div class="flex justify-between items-center mb-4">
+            <h2 id="dm-header" class="text-2xl font-bold"></h2>
+            <button id="back-to-chat-btn" class="bg-gray-300 text-black p-2 rounded">Back to Main Chat</button>
+        </div>
         <div id="dm-messages" class="chat-container bg-white p-4 rounded-lg shadow-md mb-4"></div>
         <div id="dm-reply-preview" class="reply-preview hidden"></div>
         <div class="message-input-spacer"></div>
         <div class="message-input-container">
             <div class="flex space-x-2">
+                <input type="file" id="dm-image-input" accept="image/*" class="hidden">
+                <button id="dm-image-btn" class="bg-gray-300 text-black p-2 rounded">📷</button>
                 <input type="text" id="dm-input" placeholder="Type your message..." class="border p-2 flex-grow">
                 <button id="dm-send-btn" class="bg-blue-500 text-white p-2 rounded">Send</button>
             </div>
+            <div id="dm-image-preview-container" class="mt-2"></div>
         </div>
-        <button id="back-to-chat-btn" class="mt-4 bg-gray-300 text-black p-2 rounded">Back to Main Chat</button>
     </div>
 
     <script>
@@ -97,6 +136,7 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
+        const storage = firebase.storage();
 
         // DOM elements
         const loginContainer = document.getElementById('login-container');
@@ -117,11 +157,19 @@
         const openDmsBtn = document.getElementById('open-dms-btn');
         const replyPreview = document.getElementById('reply-preview');
         const dmReplyPreview = document.getElementById('dm-reply-preview');
+        const imageInput = document.getElementById('image-input');
+        const imageBtn = document.getElementById('image-btn');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const dmImageInput = document.getElementById('dm-image-input');
+        const dmImageBtn = document.getElementById('dm-image-btn');
+        const dmImagePreviewContainer = document.getElementById('dm-image-preview-container');
 
         let currentUser = null;
         let currentDmUser = null;
         let replyingTo = null;
         let dmReplyingTo = null;
+        let selectedImage = null;
+        let dmSelectedImage = null;
 
         // Check if user is already logged in
         const savedUsername = localStorage.getItem('username');
@@ -181,8 +229,7 @@
         // Create message element
         function createMessageElement(message, messageId) {
             const div = document.createElement('div');
-            div.className = 'mb-2 p-2 rounded';
-            div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+            div.className = `message ${message.sender === currentUser.email.split('@')[0] ? 'message-sent' : 'message-received'}`;
             div.dataset.messageId = messageId;
 
             if (message.replyTo) {
@@ -192,11 +239,8 @@
                 div.appendChild(replyDiv);
             }
 
-            const messageContent = document.createElement('div');
-            messageContent.className = 'flex justify-between items-start';
-
-            const leftPart = document.createElement('div');
-            leftPart.className = 'flex-grow';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
 
             const senderSpan = document.createElement('span');
             senderSpan.className = 'font-bold cursor-pointer';
@@ -207,39 +251,44 @@
                 }
             });
 
+            contentDiv.appendChild(senderSpan);
+
+            if (message.imageUrl) {
+                const img = document.createElement('img');
+                img.src = message.imageUrl;
+                img.className = 'max-w-full h-auto mb-2';
+                contentDiv.appendChild(img);
+            }
+
             const contentSpan = document.createElement('span');
             contentSpan.textContent = message.content;
+            contentDiv.appendChild(contentSpan);
 
-            leftPart.appendChild(senderSpan);
-            leftPart.appendChild(contentSpan);
+            div.appendChild(contentDiv);
 
-            const rightPart = document.createElement('div');
-            rightPart.className = 'flex items-center';
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = formatTimestamp(message.timestamp);
+            div.appendChild(timeDiv);
 
-            const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-xs text-gray-500 mr-2';
-            timeSpan.textContent = formatTimestamp(message.timestamp);
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'flex justify-end mt-1';
 
             const replyBtn = document.createElement('button');
             replyBtn.textContent = 'Reply';
             replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
             replyBtn.addEventListener('click', () => showReplyOption(messageId, message));
-
-            rightPart.appendChild(timeSpan);
-            rightPart.appendChild(replyBtn);
+            actionsDiv.appendChild(replyBtn);
 
             if (message.sender === currentUser.email.split('@')[0]) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
                 deleteBtn.addEventListener('click', () => deleteMessage(messageId));
-                rightPart.appendChild(deleteBtn);
+                actionsDiv.appendChild(deleteBtn);
             }
 
-            messageContent.appendChild(leftPart);
-            messageContent.appendChild(rightPart);
-
-            div.appendChild(messageContent);
+            div.appendChild(actionsDiv);
 
             return div;
         }
@@ -260,9 +309,9 @@
         }
 
         // Send message
-        function sendMessage() {
+        async function sendMessage() {
             const content = messageInput.value.trim();
-            if (content) {
+            if (content || selectedImage) {
                 const message = {
                     sender: currentUser.email.split('@')[0],
                     content: content,
@@ -270,12 +319,19 @@
                     replyTo: replyingTo
                 };
 
+                if (selectedImage) {
+                    const imageUrl = await uploadImage(selectedImage);
+                    message.imageUrl = imageUrl;
+                }
+
                 db.collection('messages').add(message)
                     .then(() => {
                         messageInput.value = '';
                         replyingTo = null;
                         replyPreview.textContent = '';
                         replyPreview.classList.add('hidden');
+                        selectedImage = null;
+                        imagePreviewContainer.innerHTML = '';
                     })
                     .catch((error) => {
                         console.error('Error sending message:', error);
@@ -284,255 +340,288 @@
         }
 
         // Delete message
-        function deleteMessage(messageId) {
-            db.collection('messages').doc(messageId).delete()
-                .then(() => {
-                    console.log('Message deleted successfully');
-                })
-                .catch((error) => {
-                    console.error('Error deleting message:', error);
-                });
+function deleteMessage(messageId) {
+    db.collection('messages').doc(messageId).delete()
+        .then(() => {
+            console.log('Message deleted successfully');
+        })
+        .catch((error) => {
+            console.error('Error deleting message:', error);
+        });
+}
+
+// Load direct messages
+function loadDirectMessages(otherUser) {
+    const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
+    db.collection('directMessages').doc(chatId).collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
+        dmMessagesDiv.innerHTML = '';
+        snapshot.forEach((doc) => {
+            const message = doc.data();
+            const messageElement = createDmMessageElement(message, doc.id);
+            dmMessagesDiv.appendChild(messageElement);
+        });
+        dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
+    });
+}
+
+// Create DM message element
+function createDmMessageElement(message, messageId) {
+    const div = document.createElement('div');
+    div.className = `message ${message.sender === currentUser.email.split('@')[0] ? 'message-sent' : 'message-received'}`;
+
+    if (message.replyTo) {
+        const replyDiv = document.createElement('div');
+        replyDiv.className = 'text-sm text-gray-600 mb-1';
+        replyDiv.textContent = `${message.replyTo.sender}: ${message.replyTo.content}`;
+        div.appendChild(replyDiv);
+    }
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+
+    const senderSpan = document.createElement('span');
+    senderSpan.className = 'font-bold';
+    senderSpan.textContent = message.sender + ': ';
+    contentDiv.appendChild(senderSpan);
+
+    if (message.imageUrl) {
+        const img = document.createElement('img');
+        img.src = message.imageUrl;
+        img.className = 'max-w-full h-auto mb-2';
+        contentDiv.appendChild(img);
+    }
+
+    const contentSpan = document.createElement('span');
+    contentSpan.textContent = message.content;
+    contentDiv.appendChild(contentSpan);
+
+    div.appendChild(contentDiv);
+
+    const timeDiv = document.createElement('div');
+    timeDiv.className = 'message-time';
+    timeDiv.textContent = formatTimestamp(message.timestamp);
+    div.appendChild(timeDiv);
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'flex justify-end mt-1';
+
+    const replyBtn = document.createElement('button');
+    replyBtn.textContent = 'Reply';
+    replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
+    replyBtn.addEventListener('click', () => showDmReplyOption(messageId, message));
+    actionsDiv.appendChild(replyBtn);
+
+    if (message.sender === currentUser.email.split('@')[0]) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
+        deleteBtn.addEventListener('click', () => deleteDmMessage(messageId));
+        actionsDiv.appendChild(deleteBtn);
+    }
+
+    div.appendChild(actionsDiv);
+
+    return div;
+}
+
+// Show DM reply option
+function showDmReplyOption(messageId, message) {
+    dmReplyingTo = { id: messageId, sender: message.sender, content: message.content };
+    dmReplyPreview.textContent = `Replying to ${message.sender}: ${message.content}`;
+    dmReplyPreview.classList.remove('hidden');
+    dmInput.focus();
+}
+
+// Send direct message
+async function sendDirectMessage() {
+    const content = dmInput.value.trim();
+    if (content || dmSelectedImage) {
+        const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
+        const message = {
+            sender: currentUser.email.split('@')[0],
+            content: content,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            replyTo: dmReplyingTo
+        };
+
+        if (dmSelectedImage) {
+            const imageUrl = await uploadImage(dmSelectedImage);
+            message.imageUrl = imageUrl;
         }
 
-        // Load direct messages
-        function loadDirectMessages(otherUser) {
-            const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
-            db.collection('directMessages').doc(chatId).collection('messages').orderBy('timestamp').onSnapshot((snapshot) => {
-                dmMessagesDiv.innerHTML = '';
-                snapshot.forEach((doc) => {
-                    const message = doc.data();
-                    const messageElement = createDmMessageElement(message, doc.id);
-                    dmMessagesDiv.appendChild(messageElement);
-                });
-                dmMessagesDiv.scrollTop = dmMessagesDiv.scrollHeight;
+        db.collection('directMessages').doc(chatId).collection('messages').add(message)
+            .then(() => {
+                dmInput.value = '';
+                dmReplyingTo = null;
+                dmReplyPreview.textContent = '';
+                dmReplyPreview.classList.add('hidden');
+                dmSelectedImage = null;
+                dmImagePreviewContainer.innerHTML = '';
+            })
+            .catch((error) => {
+                console.error('Error sending direct message:', error);
             });
-        }
+    }
+}
 
-        // Create DM message element
-        function createDmMessageElement(message, messageId) {
-            const div = document.createElement('div');
-            div.className = 'mb-2 p-2 rounded';
-            div.style.backgroundColor = message.sender === currentUser.email.split('@')[0] ? '#e6f3ff' : '#f0f0f0';
+// Delete DM message
+function deleteDmMessage(messageId) {
+    const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
+    db.collection('directMessages').doc(chatId).collection('messages').doc(messageId).delete()
+        .then(() => {
+            console.log('DM message deleted successfully');
+        })
+        .catch((error) => {
+            console.error('Error deleting DM message:', error);
+        });
+}
 
-            if (message.replyTo) {
-                const replyDiv = document.createElement('div');
-                replyDiv.className = 'text-sm text-gray-600 mb-1';
-                replyDiv.textContent = `${message.replyTo.sender}: ${message.replyTo.content}`;
-                div.appendChild(replyDiv);
-            }
+// Open DMs window
+function openDmsWindow() {
+    dmContainer.classList.remove('hidden');
+    chatContainer.classList.add('hidden');
+    dmHeader.textContent = 'Your Direct Messages';
+    loadUserDms();
+}
 
-            const messageContent = document.createElement('div');
-            messageContent.className = 'flex justify-between items-start';
-
-            const leftPart = document.createElement('div');
-            leftPart.className = 'flex-grow';
-
-            const senderSpan = document.createElement('span');
-            senderSpan.className = 'font-bold';
-            senderSpan.textContent = message.sender + ': ';
-
-            const contentSpan = document.createElement('span');
-            contentSpan.textContent = message.content;
-
-            leftPart.appendChild(senderSpan);
-            leftPart.appendChild(contentSpan);
-
-            const rightPart = document.createElement('div');
-            rightPart.className = 'flex items-center';
-
-            const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-xs text-gray-500 mr-2';
-            timeSpan.textContent = formatTimestamp(message.timestamp);
-
-            const replyBtn = document.createElement('button');
-            replyBtn.textContent = 'Reply';
-            replyBtn.className = 'bg-gray-200 text-xs p-1 rounded mr-2';
-            replyBtn.addEventListener('click', () => showDmReplyOption(messageId, message));
-
-            rightPart.appendChild(timeSpan);
-            rightPart.appendChild(replyBtn);
-
-            if (message.sender === currentUser.email.split('@')[0]) {
-                const deleteBtn = document.createElement('button');
-                deleteBtn.textContent = 'Delete';
-                deleteBtn.className = 'bg-red-200 text-xs p-1 rounded';
-                deleteBtn.addEventListener('click', () => deleteDmMessage(messageId));
-                rightPart.appendChild(deleteBtn);
-            }
-
-            messageContent.appendChild(leftPart);
-            messageContent.appendChild(rightPart);
-
-            div.appendChild(messageContent);
-
-            return div;
-        }
-
-        // Show DM reply option
-        function showDmReplyOption(messageId, message) {
-            dmReplyingTo = { id: messageId, sender: message.sender, content: message.content };
-            dmReplyPreview.textContent = `Replying to ${message.sender}: ${message.content}`;
-            dmReplyPreview.classList.remove('hidden');
-            dmInput.focus();
-        }
-
-        // Send direct message
-        function sendDirectMessage() {
-            const content = dmInput.value.trim();
-            if (content && currentDmUser) {
-                const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
-                const message = {
-                    sender: currentUser.email.split('@')[0],
-                    content: content,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    replyTo: dmReplyingTo
-                };
-
-                db.collection('directMessages').doc(chatId).collection('messages').add(message)
-                    .then(() => {
-                        dmInput.value = '';
-                        dmReplyingTo = null;
-                        dmReplyPreview.textContent = '';
-                        dmReplyPreview.classList.add('hidden');
-                    })
-                    .catch((error) => {
-                        console.error('Error sending direct message:', error);
-                    });
-            }
-        }
-
-        // Delete DM message
-        function deleteDmMessage(messageId) {
-            const chatId = [currentUser.email.split('@')[0], currentDmUser].sort().join('_');
-            db.collection('directMessages').doc(chatId).collection('messages').doc(messageId).delete()
-                .then(() => {
-                    console.log('DM message deleted successfully');
-                })
-                .catch((error) => {
-                    console.error('Error deleting DM message:', error);
-                });
-        }
-
-        // Open DMs window
-        function openDmsWindow() {
-            dmContainer.classList.remove('hidden');
-            chatContainer.classList.add('hidden');
-            dmHeader.textContent = 'Your Direct Messages';
-            loadUserDms();
-        }
-
-        // Load user's DMs
-        function loadUserDms() {
-            const currentUsername = currentUser.email.split('@')[0];
-            db.collection('directMessages').where('participants', 'array-contains', currentUsername).get()
-                .then((querySnapshot) => {
-                    dmMessagesDiv.innerHTML = '';
-                    querySnapshot.forEach((doc) => {
-                        const chatData = doc.data();
-                        const otherUser = chatData.participants.find(user => user !== currentUsername);
-                        const dmButton = createDmButton(otherUser);
-                        dmMessagesDiv.appendChild(dmButton);
-                    });
-                })
-                .catch((error) => {
-                    console.error('Error loading DMs:', error);
-                });
-        }
-
-        // Create DM button
-        function createDmButton(otherUser) {
-            const button = document.createElement('button');
-            button.className = 'bg-blue-500 text-white p-2 rounded mb-2 w-full text-left';
-            button.textContent = `Chat with ${otherUser}`;
-            button.addEventListener('click', () => openDmWindow(otherUser));
-            return button;
-        }
-
-        // Function to open DM window
-        function openDmWindow(otherUser) {
-            currentDmUser = otherUser;
-            chatContainer.classList.add('hidden');
-            dmContainer.classList.remove('hidden');
-            dmHeader.textContent = `Direct Message with ${otherUser}`;
-            loadDirectMessages(otherUser);
-
-            // Ensure the chat exists in Firestore
-            const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
-            db.collection('directMessages').doc(chatId).set({
-                participants: [currentUser.email.split('@')[0], otherUser]
-            }, { merge: true });
-        }
-
-        // Function to handle user logout
-        function logout() {
-            auth.signOut().then(() => {
-                localStorage.removeItem('username');
-                localStorage.removeItem('password');
-                currentUser = null;
-                loginContainer.classList.remove('hidden');
-                chatContainer.classList.add('hidden');
-                dmContainer.classList.add('hidden');
-            }).catch((error) => {
-                console.error('Error signing out:', error);
+// Load user's DMs
+function loadUserDms() {
+    const currentUsername = currentUser.email.split('@')[0];
+    db.collection('directMessages').where('participants', 'array-contains', currentUsername).get()
+        .then((querySnapshot) => {
+            dmMessagesDiv.innerHTML = '';
+            querySnapshot.forEach((doc) => {
+                const chatData = doc.data();
+                const otherUser = chatData.participants.find(user => user !== currentUsername);
+                const dmButton = createDmButton(otherUser);
+                dmMessagesDiv.appendChild(dmButton);
             });
-        }
-
-        // Event listeners
-        loginBtn.addEventListener('click', () => {
-            const username = usernameInput.value.trim();
-            const password = passwordInput.value.trim();
-            if (username && password) {
-                login(username, password);
-            }
+        })
+        .catch((error) => {
+            console.error('Error loading DMs:', error);
         });
+}
 
-        sendBtn.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
+// Create DM button
+function createDmButton(otherUser) {
+    const button = document.createElement('button');
+    button.className = 'bg-blue-500 text-white p-2 rounded mb-2 w-full text-left';
+    button.textContent = `Chat with ${otherUser}`;
+    button.addEventListener('click', () => openDmWindow(otherUser));
+    return button;
+}
 
-        dmSendBtn.addEventListener('click', sendDirectMessage);
-        dmInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendDirectMessage();
-            }
-        });
+// Function to open DM window
+function openDmWindow(otherUser) {
+    currentDmUser = otherUser;
+    chatContainer.classList.add('hidden');
+    dmContainer.classList.remove('hidden');
+    dmHeader.textContent = `Direct Message with ${otherUser}`;
+    loadDirectMessages(otherUser);
 
-        backToChatBtn.addEventListener('click', () => {
-            dmContainer.classList.add('hidden');
+    // Ensure the chat exists in Firestore
+    const chatId = [currentUser.email.split('@')[0], otherUser].sort().join('_');
+    db.collection('directMessages').doc(chatId).set({
+        participants: [currentUser.email.split('@')[0], otherUser]
+    }, { merge: true });
+}
+
+// Function to handle user logout
+function logout() {
+    auth.signOut().then(() => {
+        localStorage.removeItem('username');
+        localStorage.removeItem('password');
+        currentUser = null;
+        loginContainer.classList.remove('hidden');
+        chatContainer.classList.add('hidden');
+        dmContainer.classList.add('hidden');
+    }).catch((error) => {
+        console.error('Error signing out:', error);
+    });
+}
+
+// Upload image function
+async function uploadImage(file) {
+    const storageRef = storage.ref();
+    const imageRef = storageRef.child(`images/${Date.now()}_${file.name}`);
+    await imageRef.put(file);
+    return await imageRef.getDownloadURL();
+}
+
+// Event listeners
+loginBtn.addEventListener('click', () => {
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
+    if (username && password) {
+        login(username, password);
+    }
+});
+
+sendBtn.addEventListener('click', sendMessage);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
+
+dmSendBtn.addEventListener('click', sendDirectMessage);
+dmInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendDirectMessage();
+    }
+});
+
+backToChatBtn.addEventListener('click', () => {
+    dmContainer.classList.add('hidden');
+    chatContainer.classList.remove('hidden');
+    currentDmUser = null;
+});
+
+openDmsBtn.addEventListener('click', openDmsWindow);
+
+imageBtn.addEventListener('click', () => imageInput.click());
+imageInput.addEventListener('change', (e) => {
+    selectedImage = e.target.files[0];
+    displayImagePreview(selectedImage, imagePreviewContainer);
+});
+
+dmImageBtn.addEventListener('click', () => dmImageInput.click());
+dmImageInput.addEventListener('change', (e) => {
+    dmSelectedImage = e.target.files[0];
+    displayImagePreview(dmSelectedImage, dmImagePreviewContainer);
+});
+
+// Function to display image preview
+function displayImagePreview(file, container) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        container.innerHTML = `<img src="${e.target.result}" class="image-preview">`;
+    };
+    reader.readAsDataURL(file);
+}
+
+// Add logout button
+const logoutBtn = document.createElement('button');
+logoutBtn.textContent = 'Logout';
+logoutBtn.className = 'bg-red-500 text-white p-2 rounded absolute top-4 right-4';
+logoutBtn.addEventListener('click', logout);
+document.body.appendChild(logoutBtn);
+
+// Initialize the chat application
+function initChat() {
+    auth.onAuthStateChanged((user) => {
+        if (user) {
+            currentUser = user;
+            loginContainer.classList.add('hidden');
             chatContainer.classList.remove('hidden');
-            currentDmUser = null;
-        });
-
-        openDmsBtn.addEventListener('click', openDmsWindow);
-
-        // Add logout button
-        const logoutBtn = document.createElement('button');
-        logoutBtn.textContent = 'Logout';
-        logoutBtn.className = 'bg-red-500 text-white p-2 rounded absolute top-4 right-4';
-        logoutBtn.addEventListener('click', logout);
-        document.body.appendChild(logoutBtn);
-
-        // Initialize the chat application
-        function initChat() {
-            auth.onAuthStateChanged((user) => {
-                if (user) {
-                    currentUser = user;
-                    loginContainer.classList.add('hidden');
-                    chatContainer.classList.remove('hidden');
-                    loadMessages();
-                } else {
-                    loginContainer.classList.remove('hidden');
-                    chatContainer.classList.add('hidden');
-                    dmContainer.classList.add('hidden');
-                }
-            });
+            loadMessages();
+        } else {
+            loginContainer.classList.remove('hidden');
+            chatContainer.classList.add('hidden');
+            dmContainer.classList.add('hidden');
         }
+    });
+}
 
-        // Call initChat to start the application
-        initChat();
-    </script>
-</body>
-</html>
+// Call initChat to start the application
+initChat();
